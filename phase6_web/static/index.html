@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Web Quiz</title>
+  <style>
+    body { font-family: monospace; background: #1a1a2e; color: #eee; text-align: center; padding: 2em; }
+    #game { max-width: 500px; margin: auto; background: #16213e; padding: 2em; border-radius: 10px; }
+    input { padding: 8px; font-size: 16px; width: 80%; margin: 10px 0; }
+    button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #0f3460; color: white; border: none; border-radius: 5px; }
+    button:hover { background: #e94560; }
+    #question { font-size: 20px; margin: 20px 0; }
+    #result { margin: 10px 0; font-size: 18px; }
+    .correct { color: #4ecca3; }
+    .wrong { color: #e94560; }
+    #scores { margin-top: 20px; text-align: left; }
+    #scores th, #scores td { padding: 4px 12px; }
+    #name-input { margin: 20px 0; }
+    #game-area { display: none; }
+  </style>
+</head>
+<body>
+  <div id="game">
+    <h1>WEB QUIZ</h1>
+    <div id="name-input">
+      <p>Enter your name:</p>
+      <input type="text" id="player-name" value="Player" />
+      <button onclick="startGame()">Start Game</button>
+    </div>
+    <div id="game-area">
+      <div id="progress">Question 0 / 0</div>
+      <div id="question">Waiting...</div>
+      <input type="text" id="answer-input" placeholder="Type your answer..." />
+      <button onclick="submitAnswer()">Submit</button>
+      <div id="result"></div>
+      <div id="final" style="display:none;">
+        <h2 id="final-score"></h2>
+        <button onclick="startGame()">Play Again</button>
+      </div>
+    </div>
+  </div>
+  <div id="scores">
+    <h3>Top Scores</h3>
+    <table id="score-table" style="margin: auto;"></table>
+  </div>
+  <script>
+    let ws = null;
+    let currentQuestion = 0;
+    let totalQuestions = 0;
+    let score = 0;
+
+    async function loadScores() {
+      let resp = await fetch('/scores');
+      let data = await resp.json();
+      let table = document.getElementById('score-table');
+      table.innerHTML = '<tr><th>Name</th><th>Score</th></tr>';
+      data.forEach(s => {
+        table.innerHTML += `<tr><td>${s.name}</td><td>${s.score}/${s.total}</td></tr>`;
+      });
+    }
+
+    function startGame() {
+      let name = document.getElementById('player-name').value || 'Player';
+      document.getElementById('name-input').style.display = 'none';
+      document.getElementById('game-area').style.display = 'block';
+      document.getElementById('final').style.display = 'none';
+      document.getElementById('result').innerHTML = '';
+      document.getElementById('answer-input').value = '';
+      currentQuestion = 0;
+      score = 0;
+
+      ws = new WebSocket('ws://' + location.host + '/ws');
+      ws.onopen = () => ws.send(JSON.stringify({ name: name }));
+      ws.onmessage = (e) => {
+        let msg = JSON.parse(e.data);
+        if (msg.type === 'start') {
+          totalQuestions = msg.total;
+          document.getElementById('progress').textContent = `Question 0 / ${totalQuestions}`;
+        } else if (msg.type === 'question') {
+          currentQuestion++;
+          document.getElementById('progress').textContent = `Question ${currentQuestion} / ${totalQuestions}`;
+          document.getElementById('question').textContent = msg.q;
+          document.getElementById('result').innerHTML = '';
+          document.getElementById('answer-input').value = '';
+          document.getElementById('answer-input').focus();
+        } else if (msg.type === 'result') {
+          let div = document.getElementById('result');
+          if (msg.correct) {
+            score++;
+            div.innerHTML = '<span class="correct">Correct!</span>';
+          } else {
+            div.innerHTML = `<span class="wrong">Wrong! Answer: ${msg.answer}</span>`;
+          }
+        } else if (msg.type === 'final') {
+          document.getElementById('game-area').style.display = 'none';
+          document.getElementById('name-input').style.display = 'block';
+          document.getElementById('final-score').textContent = `${msg.name}: ${msg.score} / ${msg.total}`;
+          loadScores();
+        }
+      };
+    }
+
+    function submitAnswer() {
+      let answer = document.getElementById('answer-input').value;
+      if (answer && ws) ws.send(JSON.stringify({ answer }));
+    }
+
+    document.getElementById('answer-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') submitAnswer();
+    });
+
+    loadScores();
+  </script>
+</body>
+</html>
